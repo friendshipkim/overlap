@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Overlap</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <div class="page-center" style="align-items:flex-start; padding: 40px 20px;">
@@ -27,6 +27,13 @@
       <div class="tab-bar">
         <button class="tab active" id="tabEnter" onclick="switchTab('enter')">Enter Availability</button>
         <button class="tab" id="tabResults" onclick="switchTab('results')">View Results</button>
+      </div>
+
+      <!-- Week navigator (shared across tabs) -->
+      <div class="week-nav">
+        <button class="week-btn" id="prevWeek" onclick="changeWeek(-1)">&#8249;</button>
+        <span class="week-label" id="weekLabel"></span>
+        <button class="week-btn" id="nextWeek" onclick="changeWeek(1)">&#8250;</button>
       </div>
 
       <!-- Enter availability panel -->
@@ -59,7 +66,9 @@
     let event = null;
     let mySlots = new Set();
     let isDragging = false;
-    let dragMode = null; // 'add' or 'remove'
+    let dragMode = null;
+    let weeks = [];
+    let currentWeekIdx = 0;
 
     async function loadEvent() {
       try {
@@ -78,9 +87,48 @@
       document.getElementById('eventTitle').textContent = event.title;
       document.getElementById('shareLink').value = location.href;
       document.getElementById('mainContent').style.display = 'block';
-      buildEnterGrid();
-      buildResultsGrid();
+      weeks = getWeeks();
+      currentWeekIdx = 0;
+      renderWeek();
       updateRespondentList();
+    }
+
+    // Group event.dates by Mon–Sun week
+    function getWeeks() {
+      const groups = new Map();
+      event.dates.forEach(date => {
+        const d = new Date(date + 'T12:00:00');
+        const day = d.getDay(); // 0=Sun,1=Mon,...
+        const diff = day === 0 ? -6 : 1 - day; // offset to Monday
+        const mon = new Date(d);
+        mon.setDate(d.getDate() + diff);
+        const key = mon.toISOString().split('T')[0];
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(date);
+      });
+      return Array.from(groups.values());
+    }
+
+    function weekLabel(dates) {
+      const fmt = d => new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      if (dates.length === 1) return fmt(dates[0]);
+      return `${fmt(dates[0])} – ${fmt(dates[dates.length - 1])}`;
+    }
+
+    function changeWeek(dir) {
+      const newIdx = currentWeekIdx + dir;
+      if (newIdx < 0 || newIdx >= weeks.length) return;
+      currentWeekIdx = newIdx;
+      renderWeek();
+    }
+
+    function renderWeek() {
+      const dates = weeks[currentWeekIdx];
+      document.getElementById('weekLabel').textContent = weekLabel(dates);
+      document.getElementById('prevWeek').disabled = currentWeekIdx === 0;
+      document.getElementById('nextWeek').disabled = currentWeekIdx === weeks.length - 1;
+      buildEnterGrid(dates);
+      buildResultsGrid(dates);
     }
 
     // Generate time slots
@@ -103,7 +151,6 @@
     }
 
     function formatDate(d) {
-      const [, , day] = d.split('-');
       const date = new Date(d + 'T12:00:00');
       return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
     }
@@ -112,20 +159,17 @@
       return `${date}|${time}`;
     }
 
-    function buildEnterGrid() {
+    function buildEnterGrid(dates) {
       const grid = document.getElementById('enterGrid');
       grid.innerHTML = '';
       const slots = getSlots();
-      const dates = event.dates;
 
-      // Build table
       const table = document.createElement('table');
       table.className = 'avail-table';
 
-      // Header row
       const thead = document.createElement('thead');
       const headerRow = document.createElement('tr');
-      headerRow.appendChild(document.createElement('th')); // time column
+      headerRow.appendChild(document.createElement('th'));
       dates.forEach(d => {
         const th = document.createElement('th');
         th.innerHTML = formatDate(d).replace(', ', '<br>');
@@ -134,13 +178,11 @@
       thead.appendChild(headerRow);
       table.appendChild(thead);
 
-      // Body
       const tbody = document.createElement('tbody');
-      slots.forEach((time, ti) => {
+      slots.forEach(time => {
         const row = document.createElement('tr');
         const timeCell = document.createElement('td');
         timeCell.className = 'time-label';
-        // Only show label on hour marks
         timeCell.textContent = time.endsWith(':00') ? formatTime(time) : '';
         row.appendChild(timeCell);
 
@@ -149,6 +191,7 @@
           cell.className = 'slot enter-slot';
           cell.dataset.key = slotKey(date, time);
           if (time.endsWith(':00')) cell.classList.add('hour-top');
+          if (mySlots.has(cell.dataset.key)) cell.classList.add('selected');
 
           cell.addEventListener('mousedown', (e) => {
             e.preventDefault();
@@ -197,7 +240,7 @@
         });
         if (!res.ok) throw new Error();
         event = await (await fetch(`/api/events/${eventId}`)).json();
-        buildResultsGrid();
+        renderWeek();
         updateRespondentList();
         switchTab('results');
       } catch (e) {
@@ -208,14 +251,12 @@
       }
     }
 
-    function buildResultsGrid() {
+    function buildResultsGrid(dates) {
       const grid = document.getElementById('resultsGrid');
       grid.innerHTML = '';
       const slots = getSlots();
-      const dates = event.dates;
       const totalRespondents = event.responses.length;
 
-      // Build overlap map
       const overlapMap = {};
       const nameMap = {};
       event.responses.forEach(r => {
@@ -256,16 +297,13 @@
           const count = overlapMap[key] || 0;
 
           if (count > 0 && totalRespondents > 0) {
-            const intensity = count / totalRespondents;
-            cell.style.backgroundColor = getGreen(intensity);
+            cell.style.backgroundColor = getGreen(count / totalRespondents);
           }
 
-          // Tooltip
           cell.addEventListener('mouseenter', (e) => {
+            if (totalRespondents === 0) return;
             const names = nameMap[key] || [];
-            const total = totalRespondents;
-            if (total === 0) return;
-            showTooltip(e, `${count}/${total} available${names.length ? ': ' + names.join(', ') : ''}`);
+            showTooltip(e, `${count}/${totalRespondents} available${names.length ? ': ' + names.join(', ') : ''}`);
           });
           cell.addEventListener('mouseleave', hideTooltip);
           cell.addEventListener('mousemove', moveTooltip);
@@ -279,7 +317,6 @@
     }
 
     function getGreen(intensity) {
-      // From light green to deep green
       const r = Math.round(214 - intensity * 150);
       const g = Math.round(237 - intensity * 80);
       const b = Math.round(188 - intensity * 140);
@@ -296,7 +333,6 @@
       list.innerHTML = `<p class="respondents"><strong>${n} response${n > 1 ? 's' : ''}:</strong> ${event.responses.map(r => r.name).join(', ')}</p>`;
     }
 
-    // Tooltip
     const tooltip = document.getElementById('tooltip');
     function showTooltip(e, text) {
       tooltip.textContent = text;
@@ -307,11 +343,8 @@
       tooltip.style.left = (e.clientX + 14) + 'px';
       tooltip.style.top = (e.clientY - 28) + 'px';
     }
-    function hideTooltip() {
-      tooltip.style.display = 'none';
-    }
+    function hideTooltip() { tooltip.style.display = 'none'; }
 
-    // Tabs
     function switchTab(tab) {
       document.getElementById('tabEnter').classList.toggle('active', tab === 'enter');
       document.getElementById('tabResults').classList.toggle('active', tab === 'results');
@@ -319,7 +352,6 @@
       document.getElementById('panelResults').style.display = tab === 'results' ? '' : 'none';
     }
 
-    // Copy link
     document.getElementById('copyBtn').addEventListener('click', () => {
       navigator.clipboard.writeText(location.href).then(() => {
         const btn = document.getElementById('copyBtn');

@@ -3,9 +3,11 @@ import os
 import secrets
 from flask import Flask, request, jsonify, send_from_directory, send_file
 
-app = Flask(__name__, static_folder='public')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PUBLIC_DIR = os.path.join(BASE_DIR, 'public')
+app = Flask(__name__, static_folder=PUBLIC_DIR, static_url_path='')
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
+DATA_DIR = os.path.join(BASE_DIR, 'data')
 os.makedirs(DATA_DIR, exist_ok=True)
 
 
@@ -84,19 +86,16 @@ def submit_availability(event_id):
 
 @app.route('/event/<event_id>')
 def event_page(event_id):
-    return send_file(os.path.join(app.static_folder, 'event.html'))
+    return send_from_directory(PUBLIC_DIR, 'event.html')
 
 
 @app.route('/')
 def index():
-    return send_file(os.path.join(app.static_folder, 'index.html'))
-
-
-@app.route('/<path:filename>')
-def static_files(filename):
-    return send_from_directory(app.static_folder, filename)
+    return send_from_directory(PUBLIC_DIR, 'index.html')
 
 
 if __name__ == '__main__':
-    print('Scheduling app running at http://localhost:3000')
-    app.run(port=3000, debug=True)
+    port = int(os.environ.get('PORT', 3000))
+    debug = os.environ.get('FLASK_ENV') != 'production'
+    print(f'Overlap running at http://localhost:{port}')
+    app.run(host='0.0.0.0', port=port, debug=debug)

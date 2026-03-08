@@ -248,15 +248,49 @@ select {
   margin-bottom: 16px;
 }
 
+/* Week navigator */
+.week-nav {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+  max-width: 900px;
+}
+
+.week-btn {
+  background: none;
+  border: 1.5px solid #d1d1d6;
+  border-radius: 8px;
+  width: 36px;
+  height: 36px;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  color: #1d1d1f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.1s, border-color 0.1s;
+}
+
+.week-btn:hover:not(:disabled) { background: #e5e5ea; border-color: #aeaeb2; }
+.week-btn:disabled { color: #c7c7cc; border-color: #e5e5ea; cursor: default; }
+
+.week-label {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #1d1d1f;
+  min-width: 160px;
+  text-align: center;
+}
+
 /* Grid / Table */
 .grid-wrapper {
   overflow-x: auto;
-  max-width: 900px;
 }
 
 .avail-table {
   border-collapse: collapse;
-  min-width: 100%;
   user-select: none;
 }
 
@@ -270,39 +304,44 @@ select {
   position: sticky;
   top: 0;
   white-space: nowrap;
+  min-width: 90px;
 }
 
 .time-label {
-  padding: 0 10px 0 0;
-  font-size: 0.72rem;
+  padding: 0 12px 0 0;
+  font-size: 0.78rem;
   color: #6e6e73;
   white-space: nowrap;
   text-align: right;
   vertical-align: top;
-  min-width: 60px;
+  min-width: 72px;
 }
 
 .slot {
-  width: 56px;
-  height: 14px;
-  border-left: 1px solid #e5e5ea;
-  border-right: 1px solid #e5e5ea;
-  border-bottom: 1px solid #f0f0f3;
+  width: 90px;
+  height: 22px;
+  border-left: 1px solid #d1d1d6;
+  border-right: 1px solid #d1d1d6;
+  border-bottom: 1px solid #e5e5ea;
   cursor: pointer;
-  transition: background 0.08s;
+  transition: background 0.06s;
 }
 
 .slot.hour-top {
-  border-top: 1px solid #c7c7cc;
+  border-top: 2px solid #aeaeb2;
 }
 
 /* Enter slots */
-.enter-slot { background: #f0f0f3; }
-.enter-slot:hover { background: #d0e8ff; }
-.enter-slot.selected { background: #0071e3; }
+.enter-slot { background: #e5e5ea; }
+.enter-slot:hover { background: #aed4f7; }
+.enter-slot.selected {
+  background: #0071e3;
+  border-bottom-color: #005bb5;
+}
+.enter-slot.selected:hover { background: #005bb5; }
 
 /* Result slots */
-.result-slot { background: #f0f0f3; }
+.result-slot { background: #e5e5ea; }
 .result-slot:hover { outline: 2px solid #0071e3; z-index: 1; position: relative; }
 
 /* Respondents */
