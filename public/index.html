@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Overlap</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="page-center">
+    <div class="card" style="max-width:620px;">
+      <h1>Overlap</h1>
+      <p class="subtitle">Create a link, share it, and see when everyone is free.</p>
+
+      <div class="form-group">
+        <label for="title">Event name</label>
+        <input type="text" id="title" placeholder="e.g. Team Sync" autocomplete="off">
+      </div>
+
+      <div class="form-group">
+        <label>Time range</label>
+        <div class="time-range">
+          <select id="timeStart"></select>
+          <span>to</span>
+          <select id="timeEnd"></select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Select dates in April 2026</label>
+        <div class="calendar" id="calendar"></div>
+        <div class="selected-count" id="selectedCount">0 dates selected</div>
+      </div>
+
+      <button class="btn-primary" id="createBtn">Create Event</button>
+    </div>
+  </div>
+
+  <script>
+    // Populate time dropdowns
+    const timeStart = document.getElementById('timeStart');
+    const timeEnd = document.getElementById('timeEnd');
+
+    function formatHour(h) {
+      const ampm = h < 12 ? 'AM' : 'PM';
+      const hr = h % 12 === 0 ? 12 : h % 12;
+      return `${hr}:00 ${ampm}`;
+    }
+
+    for (let h = 6; h <= 23; h++) {
+      const opt1 = new Option(formatHour(h), String(h).padStart(2,'0') + ':00');
+      const opt2 = new Option(formatHour(h), String(h).padStart(2,'0') + ':00');
+      timeStart.appendChild(opt1);
+      timeEnd.appendChild(opt2);
+    }
+    timeStart.value = '09:00';
+    timeEnd.value = '21:00';
+
+    // Build April 2026 calendar
+    const calendar = document.getElementById('calendar');
+    const selectedDates = new Set();
+    const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+    // Header row
+    days.forEach(d => {
+      const h = document.createElement('div');
+      h.className = 'cal-header';
+      h.textContent = d;
+      calendar.appendChild(h);
+    });
+
+    // April 1 2026 is a Wednesday (day index 3)
+    for (let i = 0; i < 3; i++) {
+      const blank = document.createElement('div');
+      blank.className = 'cal-blank';
+      calendar.appendChild(blank);
+    }
+
+    for (let d = 1; d <= 30; d++) {
+      const cell = document.createElement('div');
+      cell.className = 'cal-day';
+      cell.textContent = d;
+      const dateStr = `2026-04-${String(d).padStart(2,'0')}`;
+      cell.dataset.date = dateStr;
+      cell.addEventListener('click', () => {
+        if (selectedDates.has(dateStr)) {
+          selectedDates.delete(dateStr);
+          cell.classList.remove('selected');
+        } else {
+          selectedDates.add(dateStr);
+          cell.classList.add('selected');
+        }
+        updateCount();
+      });
+      calendar.appendChild(cell);
+    }
+
+    function updateCount() {
+      const n = selectedDates.size;
+      document.getElementById('selectedCount').textContent =
+        n === 0 ? 'No dates selected' : `${n} date${n > 1 ? 's' : ''} selected`;
+    }
+
+    document.getElementById('createBtn').addEventListener('click', async () => {
+      const title = document.getElementById('title').value.trim();
+      const ts = timeStart.value;
+      const te = timeEnd.value;
+      const dates = Array.from(selectedDates).sort();
+
+      if (!title) { alert('Please enter an event name.'); return; }
+      if (dates.length === 0) { alert('Please select at least one date.'); return; }
+      if (ts >= te) { alert('End time must be after start time.'); return; }
+
+      const btn = document.getElementById('createBtn');
+      btn.disabled = true;
+      btn.textContent = 'Creating...';
+
+      try {
+        const res = await fetch('/api/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, dates, timeStart: ts, timeEnd: te })
+        });
+        const data = await res.json();
+        window.location.href = `/event/${data.id}`;
+      } catch (e) {
+        alert('Something went wrong. Please try again.');
+        btn.disabled = false;
+        btn.textContent = 'Create Event';
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Overlap</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="page-center" style="align-items:flex-start; padding: 40px 20px;">
+
+    <!-- Header -->
+    <div class="event-header">
+      <a href="/" class="back-link">+ New Event</a>
+      <div>
+        <h1 id="eventTitle">Loading...</h1>
+        <div class="share-row">
+          <span class="share-label">Share this link:</span>
+          <input type="text" id="shareLink" readonly class="share-input">
+          <button class="btn-copy" id="copyBtn">Copy</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="mainContent" style="display:none; width:100%;">
+      <!-- Tab bar -->
+      <div class="tab-bar">
+        <button class="tab active" id="tabEnter" onclick="switchTab('enter')">Enter Availability</button>
+        <button class="tab" id="tabResults" onclick="switchTab('results')">View Results</button>
+      </div>
+
+      <!-- Enter availability panel -->
+      <div id="panelEnter">
+        <div class="name-row">
+          <input type="text" id="nameInput" placeholder="Your name" class="name-input" autocomplete="off">
+          <button class="btn-primary" id="saveBtn" onclick="saveAvailability()">Save</button>
+        </div>
+        <p class="hint">Click and drag on the grid to mark when you're available.</p>
+        <div class="grid-wrapper" id="enterGrid"></div>
+      </div>
+
+      <!-- Results panel -->
+      <div id="panelResults" style="display:none;">
+        <div id="respondentList"></div>
+        <p class="hint">Darker green = more people available. Hover to see who's free.</p>
+        <div class="grid-wrapper" id="resultsGrid"></div>
+      </div>
+    </div>
+
+    <div id="loadingMsg" class="loading-msg">Loading event...</div>
+    <div id="errorMsg" class="error-msg" style="display:none;">Event not found.</div>
+  </div>
+
+  <!-- Tooltip -->
+  <div class="tooltip" id="tooltip" style="display:none;"></div>
+
+  <script>
+    const eventId = location.pathname.split('/event/')[1];
+    let event = null;
+    let mySlots = new Set();
+    let isDragging = false;
+    let dragMode = null; // 'add' or 'remove'
+
+    async function loadEvent() {
+      try {
+        const res = await fetch(`/api/events/${eventId}`);
+        if (!res.ok) throw new Error();
+        event = await res.json();
+        init();
+      } catch (e) {
+        document.getElementById('loadingMsg').style.display = 'none';
+        document.getElementById('errorMsg').style.display = 'block';
+      }
+    }
+
+    function init() {
+      document.getElementById('loadingMsg').style.display = 'none';
+      document.getElementById('eventTitle').textContent = event.title;
+      document.getElementById('shareLink').value = location.href;
+      document.getElementById('mainContent').style.display = 'block';
+      buildEnterGrid();
+      buildResultsGrid();
+      updateRespondentList();
+    }
+
+    // Generate time slots
+    function getSlots() {
+      const slots = [];
+      const [startH] = event.timeStart.split(':').map(Number);
+      const [endH] = event.timeEnd.split(':').map(Number);
+      for (let h = startH; h < endH; h++) {
+        slots.push(`${String(h).padStart(2,'0')}:00`);
+        slots.push(`${String(h).padStart(2,'0')}:30`);
+      }
+      return slots;
+    }
+
+    function formatTime(t) {
+      const [h, m] = t.split(':').map(Number);
+      const ampm = h < 12 ? 'AM' : 'PM';
+      const hr = h % 12 === 0 ? 12 : h % 12;
+      return `${hr}:${m === 0 ? '00' : '30'} ${ampm}`;
+    }
+
+    function formatDate(d) {
+      const [, , day] = d.split('-');
+      const date = new Date(d + 'T12:00:00');
+      return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    }
+
+    function slotKey(date, time) {
+      return `${date}|${time}`;
+    }
+
+    function buildEnterGrid() {
+      const grid = document.getElementById('enterGrid');
+      grid.innerHTML = '';
+      const slots = getSlots();
+      const dates = event.dates;
+
+      // Build table
+      const table = document.createElement('table');
+      table.className = 'avail-table';
+
+      // Header row
+      const thead = document.createElement('thead');
+      const headerRow = document.createElement('tr');
+      headerRow.appendChild(document.createElement('th')); // time column
+      dates.forEach(d => {
+        const th = document.createElement('th');
+        th.innerHTML = formatDate(d).replace(', ', '<br>');
+        headerRow.appendChild(th);
+      });
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+
+      // Body
+      const tbody = document.createElement('tbody');
+      slots.forEach((time, ti) => {
+        const row = document.createElement('tr');
+        const timeCell = document.createElement('td');
+        timeCell.className = 'time-label';
+        // Only show label on hour marks
+        timeCell.textContent = time.endsWith(':00') ? formatTime(time) : '';
+        row.appendChild(timeCell);
+
+        dates.forEach(date => {
+          const cell = document.createElement('td');
+          cell.className = 'slot enter-slot';
+          cell.dataset.key = slotKey(date, time);
+          if (time.endsWith(':00')) cell.classList.add('hour-top');
+
+          cell.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            isDragging = true;
+            dragMode = mySlots.has(cell.dataset.key) ? 'remove' : 'add';
+            toggleSlot(cell);
+          });
+          cell.addEventListener('mouseenter', () => {
+            if (isDragging) toggleSlot(cell);
+          });
+
+          row.appendChild(cell);
+        });
+        tbody.appendChild(row);
+      });
+      table.appendChild(tbody);
+      grid.appendChild(table);
+
+      document.addEventListener('mouseup', () => { isDragging = false; });
+    }
+
+    function toggleSlot(cell) {
+      const key = cell.dataset.key;
+      if (dragMode === 'add') {
+        mySlots.add(key);
+        cell.classList.add('selected');
+      } else {
+        mySlots.delete(key);
+        cell.classList.remove('selected');
+      }
+    }
+
+    async function saveAvailability() {
+      const name = document.getElementById('nameInput').value.trim();
+      if (!name) { alert('Please enter your name.'); return; }
+
+      const btn = document.getElementById('saveBtn');
+      btn.disabled = true;
+      btn.textContent = 'Saving...';
+
+      try {
+        const res = await fetch(`/api/events/${eventId}/availability`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, slots: Array.from(mySlots) })
+        });
+        if (!res.ok) throw new Error();
+        event = await (await fetch(`/api/events/${eventId}`)).json();
+        buildResultsGrid();
+        updateRespondentList();
+        switchTab('results');
+      } catch (e) {
+        alert('Failed to save. Please try again.');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Save';
+      }
+    }
+
+    function buildResultsGrid() {
+      const grid = document.getElementById('resultsGrid');
+      grid.innerHTML = '';
+      const slots = getSlots();
+      const dates = event.dates;
+      const totalRespondents = event.responses.length;
+
+      // Build overlap map
+      const overlapMap = {};
+      const nameMap = {};
+      event.responses.forEach(r => {
+        r.slots.forEach(key => {
+          overlapMap[key] = (overlapMap[key] || 0) + 1;
+          if (!nameMap[key]) nameMap[key] = [];
+          nameMap[key].push(r.name);
+        });
+      });
+
+      const table = document.createElement('table');
+      table.className = 'avail-table';
+
+      const thead = document.createElement('thead');
+      const headerRow = document.createElement('tr');
+      headerRow.appendChild(document.createElement('th'));
+      dates.forEach(d => {
+        const th = document.createElement('th');
+        th.innerHTML = formatDate(d).replace(', ', '<br>');
+        headerRow.appendChild(th);
+      });
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+
+      const tbody = document.createElement('tbody');
+      slots.forEach(time => {
+        const row = document.createElement('tr');
+        const timeCell = document.createElement('td');
+        timeCell.className = 'time-label';
+        timeCell.textContent = time.endsWith(':00') ? formatTime(time) : '';
+        row.appendChild(timeCell);
+
+        dates.forEach(date => {
+          const cell = document.createElement('td');
+          cell.className = 'slot result-slot';
+          if (time.endsWith(':00')) cell.classList.add('hour-top');
+          const key = slotKey(date, time);
+          const count = overlapMap[key] || 0;
+
+          if (count > 0 && totalRespondents > 0) {
+            const intensity = count / totalRespondents;
+            cell.style.backgroundColor = getGreen(intensity);
+          }
+
+          // Tooltip
+          cell.addEventListener('mouseenter', (e) => {
+            const names = nameMap[key] || [];
+            const total = totalRespondents;
+            if (total === 0) return;
+            showTooltip(e, `${count}/${total} available${names.length ? ': ' + names.join(', ') : ''}`);
+          });
+          cell.addEventListener('mouseleave', hideTooltip);
+          cell.addEventListener('mousemove', moveTooltip);
+
+          row.appendChild(cell);
+        });
+        tbody.appendChild(row);
+      });
+      table.appendChild(tbody);
+      grid.appendChild(table);
+    }
+
+    function getGreen(intensity) {
+      // From light green to deep green
+      const r = Math.round(214 - intensity * 150);
+      const g = Math.round(237 - intensity * 80);
+      const b = Math.round(188 - intensity * 140);
+      return `rgb(${r},${g},${b})`;
+    }
+
+    function updateRespondentList() {
+      const list = document.getElementById('respondentList');
+      const n = event.responses.length;
+      if (n === 0) {
+        list.innerHTML = '<p class="hint">No responses yet.</p>';
+        return;
+      }
+      list.innerHTML = `<p class="respondents"><strong>${n} response${n > 1 ? 's' : ''}:</strong> ${event.responses.map(r => r.name).join(', ')}</p>`;
+    }
+
+    // Tooltip
+    const tooltip = document.getElementById('tooltip');
+    function showTooltip(e, text) {
+      tooltip.textContent = text;
+      tooltip.style.display = 'block';
+      moveTooltip(e);
+    }
+    function moveTooltip(e) {
+      tooltip.style.left = (e.clientX + 14) + 'px';
+      tooltip.style.top = (e.clientY - 28) + 'px';
+    }
+    function hideTooltip() {
+      tooltip.style.display = 'none';
+    }
+
+    // Tabs
+    function switchTab(tab) {
+      document.getElementById('tabEnter').classList.toggle('active', tab === 'enter');
+      document.getElementById('tabResults').classList.toggle('active', tab === 'results');
+      document.getElementById('panelEnter').style.display = tab === 'enter' ? '' : 'none';
+      document.getElementById('panelResults').style.display = tab === 'results' ? '' : 'none';
+    }
+
+    // Copy link
+    document.getElementById('copyBtn').addEventListener('click', () => {
+      navigator.clipboard.writeText(location.href).then(() => {
+        const btn = document.getElementById('copyBtn');
+        btn.textContent = 'Copied!';
+        setTimeout(() => btn.textContent = 'Copy', 2000);
+      });
+    });
+
+    loadEvent();
+  </script>
+</body>
+</html>
