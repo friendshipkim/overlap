@@ -60,6 +60,37 @@ def get_event(event_id):
     return jsonify(event)
 
 
+@app.route('/api/events/<event_id>/dates', methods=['POST'])
+def add_dates(event_id):
+    event = read_event(event_id)
+    if event is None:
+        return jsonify({'error': 'Event not found'}), 404
+
+    new_dates = request.get_json().get('dates', [])
+    existing = set(event['dates'])
+    for d in new_dates:
+        if d not in existing:
+            event['dates'].append(d)
+    event['dates'].sort()
+    write_event(event)
+    return jsonify({'success': True})
+
+
+@app.route('/api/events/<event_id>/availability/<name>', methods=['DELETE'])
+def delete_availability(event_id, name):
+    event = read_event(event_id)
+    if event is None:
+        return jsonify({'error': 'Event not found'}), 404
+
+    before = len(event['responses'])
+    event['responses'] = [r for r in event['responses'] if r['name'].lower() != name.lower()]
+    if len(event['responses']) == before:
+        return jsonify({'error': 'Respondent not found'}), 404
+
+    write_event(event)
+    return jsonify({'success': True})
+
+
 @app.route('/api/events/<event_id>/availability', methods=['POST'])
 def submit_availability(event_id):
     event = read_event(event_id)

@@ -12,7 +12,7 @@ body {
   flex-direction: column;
   align-items: center;
   min-height: 100vh;
-  padding: 60px 20px;
+  padding: 40px 16px;
 }
 
 /* Card */
@@ -102,7 +102,22 @@ select {
   padding: 6px 0;
 }
 
-.cal-blank { }
+.cal-blank {}
+
+.cal-month-nav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.cal-month-label {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #1d1d1f;
+  min-width: 140px;
+  text-align: center;
+}
 
 .cal-day {
   text-align: center;
@@ -229,6 +244,33 @@ select {
   border-bottom-color: #0071e3;
 }
 
+/* Timezone row */
+.tz-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+  max-width: 900px;
+}
+
+.tz-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #3a3a3c;
+  white-space: nowrap;
+}
+
+.tz-row select {
+  padding: 6px 10px;
+  border: 1.5px solid #d1d1d6;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  background: #fff;
+  color: #1d1d1f;
+  cursor: pointer;
+  max-width: 240px;
+}
+
 /* Name row */
 .name-row {
   display: flex;
@@ -319,7 +361,7 @@ select {
 
 .slot {
   width: 90px;
-  height: 22px;
+  height: 28px;
   border-left: 1px solid #d1d1d6;
   border-right: 1px solid #d1d1d6;
   border-bottom: 1px solid #e5e5ea;
@@ -329,6 +371,22 @@ select {
 
 .slot.hour-top {
   border-top: 2px solid #aeaeb2;
+}
+
+/* Unavailable columns */
+.col-unavailable {
+  color: #c7c7cc !important;
+}
+
+.slot-unavailable {
+  background: repeating-linear-gradient(
+    135deg,
+    #f0f0f3,
+    #f0f0f3 3px,
+    #e5e5ea 3px,
+    #e5e5ea 6px
+  );
+  cursor: default;
 }
 
 /* Enter slots */
@@ -349,6 +407,63 @@ select {
   font-size: 0.9rem;
   margin-bottom: 12px;
   color: #3a3a3c;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.respondent-btn {
+  background: #f0f0f3;
+  border: 1.5px solid #d1d1d6;
+  border-radius: 20px;
+  padding: 3px 12px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #1d1d1f;
+  cursor: pointer;
+  transition: background 0.1s, border-color 0.1s;
+}
+
+.respondent-btn:hover {
+  background: #e0eeff;
+  border-color: #0071e3;
+  color: #0071e3;
+}
+
+.respondent-pill {
+  display: inline-flex;
+  align-items: center;
+  border: 1.5px solid #d1d1d6;
+  border-radius: 20px;
+  overflow: hidden;
+}
+
+.respondent-pill .respondent-btn {
+  border: none;
+  border-radius: 0;
+  padding: 3px 10px;
+}
+
+.respondent-pill .respondent-btn:hover {
+  border: none;
+}
+
+.respondent-delete {
+  background: none;
+  border: none;
+  border-left: 1.5px solid #d1d1d6;
+  padding: 3px 8px;
+  font-size: 0.95rem;
+  color: #aeaeb2;
+  cursor: pointer;
+  line-height: 1;
+  transition: background 0.1s, color 0.1s;
+}
+
+.respondent-delete:hover {
+  background: #fff0f0;
+  color: #ff3b30;
 }
 
 /* Tooltip */
@@ -364,6 +479,48 @@ select {
   white-space: nowrap;
 }
 
+/* Add dates section */
+.add-dates-section {
+  margin-top: 24px;
+  max-width: 500px;
+}
+
+.add-dates-toggle {
+  background: none;
+  border: 1.5px dashed #aeaeb2;
+  border-radius: 8px;
+  padding: 8px 18px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #6e6e73;
+  cursor: pointer;
+  transition: border-color 0.1s, color 0.1s;
+}
+
+.add-dates-toggle:hover {
+  border-color: #0071e3;
+  color: #0071e3;
+}
+
+.add-dates-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cal-day-existing {
+  text-align: center;
+  padding: 8px 4px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  color: #aeaeb2;
+  cursor: default;
+  background: #f5f5f7;
+}
+
 /* Loading / Error */
 .loading-msg, .error-msg {
   margin-top: 60px;
@@ -372,3 +529,26 @@ select {
 }
 
 .error-msg { color: #ff3b30; }
+
+/* Mobile */
+@media (max-width: 600px) {
+  .page-center { padding: 24px 12px; }
+
+  .card { padding: 24px 16px; }
+
+  h1 { font-size: 1.4rem; }
+
+  .share-row { flex-direction: column; align-items: flex-start; }
+  .share-input { max-width: 100%; width: 100%; }
+
+  .name-row { max-width: 100%; }
+
+  .avail-table thead th { font-size: 0.7rem; min-width: 64px; }
+  .slot { width: 64px; height: 32px; }
+  .time-label { font-size: 0.7rem; min-width: 52px; padding-right: 6px; }
+
+  .tab { padding: 10px 16px; font-size: 0.88rem; }
+
+  .week-label { font-size: 0.88rem; min-width: 120px; }
+  .week-btn { width: 32px; height: 32px; font-size: 1.2rem; }
+}

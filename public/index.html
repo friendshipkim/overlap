@@ -27,9 +27,14 @@
       </div>
 
       <div class="form-group">
-        <label>Select dates in April 2026</label>
+        <label>Select dates</label>
+        <div class="cal-month-nav">
+          <button class="week-btn" id="prevMonth" onclick="changeMonth(-1)">&#8249;</button>
+          <span class="cal-month-label" id="monthLabel"></span>
+          <button class="week-btn" id="nextMonth" onclick="changeMonth(1)">&#8250;</button>
+        </div>
         <div class="calendar" id="calendar"></div>
-        <div class="selected-count" id="selectedCount">0 dates selected</div>
+        <div class="selected-count" id="selectedCount">No dates selected</div>
       </div>
 
       <button class="btn-primary" id="createBtn">Create Event</button>
@@ -37,7 +42,7 @@
   </div>
 
   <script>
-    // Populate time dropdowns
+    // ── Time dropdowns ───────────────────────────────────────────────
     const timeStart = document.getElementById('timeStart');
     const timeEnd = document.getElementById('timeEnd');
 
@@ -48,51 +53,71 @@
     }
 
     for (let h = 6; h <= 23; h++) {
-      const opt1 = new Option(formatHour(h), String(h).padStart(2,'0') + ':00');
-      const opt2 = new Option(formatHour(h), String(h).padStart(2,'0') + ':00');
-      timeStart.appendChild(opt1);
-      timeEnd.appendChild(opt2);
+      timeStart.appendChild(new Option(formatHour(h), String(h).padStart(2,'0') + ':00'));
+      timeEnd.appendChild(new Option(formatHour(h), String(h).padStart(2,'0') + ':00'));
     }
     timeStart.value = '09:00';
     timeEnd.value = '21:00';
 
-    // Build April 2026 calendar
-    const calendar = document.getElementById('calendar');
+    // ── Calendar state ───────────────────────────────────────────────
     const selectedDates = new Set();
-    const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const today = new Date();
+    let viewYear = today.getFullYear();
+    let viewMonth = today.getMonth(); // 0-indexed
 
-    // Header row
-    days.forEach(d => {
-      const h = document.createElement('div');
-      h.className = 'cal-header';
-      h.textContent = d;
-      calendar.appendChild(h);
-    });
+    const MONTHS = ['January','February','March','April','May','June',
+                    'July','August','September','October','November','December'];
+    const DAY_HEADERS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-    // April 1 2026 is a Wednesday (day index 3)
-    for (let i = 0; i < 3; i++) {
-      const blank = document.createElement('div');
-      blank.className = 'cal-blank';
-      calendar.appendChild(blank);
+    function changeMonth(dir) {
+      viewMonth += dir;
+      if (viewMonth > 11) { viewMonth = 0; viewYear++; }
+      if (viewMonth < 0)  { viewMonth = 11; viewYear--; }
+      renderCalendar();
     }
 
-    for (let d = 1; d <= 30; d++) {
-      const cell = document.createElement('div');
-      cell.className = 'cal-day';
-      cell.textContent = d;
-      const dateStr = `2026-04-${String(d).padStart(2,'0')}`;
-      cell.dataset.date = dateStr;
-      cell.addEventListener('click', () => {
-        if (selectedDates.has(dateStr)) {
-          selectedDates.delete(dateStr);
-          cell.classList.remove('selected');
-        } else {
-          selectedDates.add(dateStr);
-          cell.classList.add('selected');
-        }
-        updateCount();
+    function renderCalendar() {
+      const calendar = document.getElementById('calendar');
+      calendar.innerHTML = '';
+
+      document.getElementById('monthLabel').textContent = `${MONTHS[viewMonth]} ${viewYear}`;
+
+      // Day headers
+      DAY_HEADERS.forEach(d => {
+        const h = document.createElement('div');
+        h.className = 'cal-header';
+        h.textContent = d;
+        calendar.appendChild(h);
       });
-      calendar.appendChild(cell);
+
+      // Leading blanks
+      const firstDay = new Date(viewYear, viewMonth, 1).getDay(); // 0=Sun
+      for (let i = 0; i < firstDay; i++) {
+        const blank = document.createElement('div');
+        blank.className = 'cal-blank';
+        calendar.appendChild(blank);
+      }
+
+      // Days
+      const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        const cell = document.createElement('div');
+        cell.className = 'cal-day';
+        cell.textContent = d;
+        if (selectedDates.has(dateStr)) cell.classList.add('selected');
+        cell.addEventListener('click', () => {
+          if (selectedDates.has(dateStr)) {
+            selectedDates.delete(dateStr);
+            cell.classList.remove('selected');
+          } else {
+            selectedDates.add(dateStr);
+            cell.classList.add('selected');
+          }
+          updateCount();
+        });
+        calendar.appendChild(cell);
+      }
     }
 
     function updateCount() {
@@ -101,6 +126,9 @@
         n === 0 ? 'No dates selected' : `${n} date${n > 1 ? 's' : ''} selected`;
     }
 
+    renderCalendar();
+
+    // ── Create event ─────────────────────────────────────────────────
     document.getElementById('createBtn').addEventListener('click', async () => {
       const title = document.getElementById('title').value.trim();
       const ts = timeStart.value;

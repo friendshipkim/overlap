@@ -29,11 +29,17 @@
         <button class="tab" id="tabResults" onclick="switchTab('results')">View Results</button>
       </div>
 
-      <!-- Week navigator (shared across tabs) -->
+      <!-- Week navigator (shared) -->
       <div class="week-nav">
         <button class="week-btn" id="prevWeek" onclick="changeWeek(-1)">&#8249;</button>
         <span class="week-label" id="weekLabel"></span>
         <button class="week-btn" id="nextWeek" onclick="changeWeek(1)">&#8250;</button>
+      </div>
+
+      <!-- Timezone selector (shared) -->
+      <div class="tz-row">
+        <span class="tz-label">Timezone:</span>
+        <select id="tzSelect" onchange="onTZChange()"></select>
       </div>
 
       <!-- Enter availability panel -->
@@ -44,6 +50,23 @@
         </div>
         <p class="hint">Click and drag on the grid to mark when you're available.</p>
         <div class="grid-wrapper" id="enterGrid"></div>
+
+        <!-- Add dates -->
+        <div class="add-dates-section">
+          <button class="add-dates-toggle" id="addDatesToggle" onclick="toggleAddDates()">+ Add dates</button>
+          <div id="addDatesPanel" style="display:none;">
+            <div class="cal-month-nav" style="margin-top:12px;">
+              <button class="week-btn" onclick="addDatesChangeMonth(-1)">&#8249;</button>
+              <span class="cal-month-label" id="addDatesMonthLabel"></span>
+              <button class="week-btn" onclick="addDatesChangeMonth(1)">&#8250;</button>
+            </div>
+            <div class="calendar" id="addDatesCalendar"></div>
+            <div class="add-dates-footer">
+              <span class="selected-count" id="addDatesCount">No dates selected</span>
+              <button class="btn-primary" id="addDatesBtn" onclick="submitAddDates()">Add dates</button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Results panel -->
@@ -70,6 +93,126 @@
     let weeks = [];
     let currentWeekIdx = 0;
 
+    // ── Timezone list ────────────────────────────────────────────────
+    const TIMEZONES = [
+      { id: 'Pacific/Honolulu',    label: 'Hawaii' },
+      { id: 'America/Anchorage',   label: 'Alaska' },
+      { id: 'America/Los_Angeles', label: 'Pacific' },
+      { id: 'America/Denver',      label: 'Mountain' },
+      { id: 'America/Chicago',     label: 'Central' },
+      { id: 'America/New_York',    label: 'Eastern' },
+      { id: 'America/Sao_Paulo',   label: 'São Paulo' },
+      { id: 'Atlantic/Azores',     label: 'Azores' },
+      { id: 'Europe/London',       label: 'London' },
+      { id: 'Europe/Paris',        label: 'Central Europe' },
+      { id: 'Europe/Helsinki',     label: 'Eastern Europe' },
+      { id: 'Europe/Moscow',       label: 'Moscow' },
+      { id: 'Asia/Dubai',          label: 'Dubai' },
+      { id: 'Asia/Kolkata',        label: 'India' },
+      { id: 'Asia/Dhaka',          label: 'Dhaka' },
+      { id: 'Asia/Bangkok',        label: 'Bangkok' },
+      { id: 'Asia/Shanghai',       label: 'China' },
+      { id: 'Asia/Seoul',          label: 'Seoul' },
+      { id: 'Asia/Tokyo',          label: 'Tokyo' },
+      { id: 'Australia/Perth',     label: 'Perth' },
+      { id: 'Australia/Sydney',    label: 'Sydney' },
+      { id: 'Pacific/Auckland',    label: 'Auckland' },
+    ];
+
+    function getOffsetLabel(tzId) {
+      try {
+        const d = new Date('2026-04-15T12:00:00Z');
+        const parts = new Intl.DateTimeFormat('en-US', {
+          timeZone: tzId, timeZoneName: 'shortOffset'
+        }).formatToParts(d);
+        return parts.find(p => p.type === 'timeZoneName')?.value || '';
+      } catch (e) { return ''; }
+    }
+
+    function initTZSelect() {
+      const sel = document.getElementById('tzSelect');
+      sel.innerHTML = '';
+
+      // Add browser timezone if not in our list
+      const browserTZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const knownIds = TIMEZONES.map(t => t.id);
+      if (!knownIds.includes(browserTZ)) {
+        const opt = document.createElement('option');
+        opt.value = browserTZ;
+        opt.textContent = `${browserTZ.split('/').pop().replace('_', ' ')} (${getOffsetLabel(browserTZ)})`;
+        sel.appendChild(opt);
+      }
+
+      TIMEZONES.forEach(tz => {
+        const opt = document.createElement('option');
+        opt.value = tz.id;
+        opt.textContent = `${tz.label} (${getOffsetLabel(tz.id)})`;
+        sel.appendChild(opt);
+      });
+
+      // Default: stored in localStorage → America/New_York
+      const stored = localStorage.getItem(`tz_${eventId}`);
+      sel.value = stored || 'America/New_York';
+    }
+
+    function getCurrentTZ() {
+      return document.getElementById('tzSelect').value;
+    }
+
+    function onTZChange() {
+      localStorage.setItem(`tz_${eventId}`, getCurrentTZ());
+      renderWeek();
+    }
+
+    // ── UTC ↔ local conversion ───────────────────────────────────────
+
+    // Convert a local (date "YYYY-MM-DD", time "HH:MM") in tz → UTC key "YYYY-MM-DDTHH:MM"
+    function localToUTCKey(date, time, tz) {
+      const fakeUTC = new Date(`${date}T${time}:00Z`);
+      const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: tz,
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', hour12: false
+      }).formatToParts(fakeUTC);
+      const p = {};
+      parts.forEach(x => p[x.type] = x.value);
+
+      // Handle midnight edge case (hour '24' = 00:00 next day)
+      let h = p.hour, d = `${p.year}-${p.month}-${p.day}`;
+      if (h === '24') {
+        h = '00';
+        const next = new Date(d + 'T00:00:00Z');
+        next.setUTCDate(next.getUTCDate() + 1);
+        d = next.toISOString().slice(0, 10);
+      }
+
+      const tzShows = new Date(`${d}T${h}:${p.minute}:00Z`);
+      const actualUTC = new Date(2 * fakeUTC.getTime() - tzShows.getTime());
+      return actualUTC.toISOString().slice(0, 16); // YYYY-MM-DDTHH:MM
+    }
+
+    // Convert a UTC key "YYYY-MM-DDTHH:MM" → local { date, time } in tz
+    function utcKeyToLocal(utcKey, tz) {
+      const d = new Date(utcKey + ':00Z');
+      const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: tz,
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', hour12: false
+      }).formatToParts(d);
+      const p = {};
+      parts.forEach(x => p[x.type] = x.value);
+      const h = p.hour === '24' ? '00' : p.hour;
+      return { date: `${p.year}-${p.month}-${p.day}`, time: `${h}:${p.minute}` };
+    }
+
+    // Normalize a stored slot key to a UTC key
+    // Supports new "YYYY-MM-DDTHH:MM" (UTC) and old "YYYY-MM-DD|HH:MM" (treated as UTC)
+    function toUTCKey(slot) {
+      if (slot.includes('T')) return slot;
+      return slot.replace('|', 'T'); // old format → treat as UTC
+    }
+
+    // ── Event loading ────────────────────────────────────────────────
     async function loadEvent() {
       try {
         const res = await fetch(`/api/events/${eventId}`);
@@ -87,19 +230,20 @@
       document.getElementById('eventTitle').textContent = event.title;
       document.getElementById('shareLink').value = location.href;
       document.getElementById('mainContent').style.display = 'block';
+      initTZSelect();
       weeks = getWeeks();
       currentWeekIdx = 0;
       renderWeek();
       updateRespondentList();
     }
 
-    // Group event.dates by Mon–Sun week
+    // ── Week navigation ──────────────────────────────────────────────
     function getWeeks() {
       const groups = new Map();
       event.dates.forEach(date => {
         const d = new Date(date + 'T12:00:00');
-        const day = d.getDay(); // 0=Sun,1=Mon,...
-        const diff = day === 0 ? -6 : 1 - day; // offset to Monday
+        const day = d.getDay();
+        const diff = day === 0 ? -6 : 1 - day;
         const mon = new Date(d);
         mon.setDate(d.getDate() + diff);
         const key = mon.toISOString().split('T')[0];
@@ -111,8 +255,7 @@
 
     function weekLabel(dates) {
       const fmt = d => new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      if (dates.length === 1) return fmt(dates[0]);
-      return `${fmt(dates[0])} – ${fmt(dates[dates.length - 1])}`;
+      return dates.length === 1 ? fmt(dates[0]) : `${fmt(dates[0])} – ${fmt(dates[dates.length - 1])}`;
     }
 
     function changeWeek(dir) {
@@ -131,7 +274,22 @@
       buildResultsGrid(dates);
     }
 
-    // Generate time slots
+    // ── Helpers ──────────────────────────────────────────────────────
+
+    // Return all 7 days (Mon–Sun) for the week containing the given dates
+    function getWeekAllDays(dates) {
+      const d = new Date(dates[0] + 'T12:00:00');
+      const day = d.getDay();
+      const diff = day === 0 ? -6 : 1 - day;
+      const monday = new Date(d);
+      monday.setDate(d.getDate() + diff);
+      return Array.from({ length: 7 }, (_, i) => {
+        const x = new Date(monday);
+        x.setDate(monday.getDate() + i);
+        return x.toISOString().split('T')[0];
+      });
+    }
+
     function getSlots() {
       const slots = [];
       const [startH] = event.timeStart.split(':').map(Number);
@@ -151,18 +309,17 @@
     }
 
     function formatDate(d) {
-      const date = new Date(d + 'T12:00:00');
-      return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+      return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
     }
 
-    function slotKey(date, time) {
-      return `${date}|${time}`;
-    }
-
+    // ── Enter grid ───────────────────────────────────────────────────
     function buildEnterGrid(dates) {
       const grid = document.getElementById('enterGrid');
       grid.innerHTML = '';
       const slots = getSlots();
+      const tz = getCurrentTZ();
+      const allDays = getWeekAllDays(dates);
+      const availableSet = new Set(event.dates);
 
       const table = document.createElement('table');
       table.className = 'avail-table';
@@ -170,9 +327,10 @@
       const thead = document.createElement('thead');
       const headerRow = document.createElement('tr');
       headerRow.appendChild(document.createElement('th'));
-      dates.forEach(d => {
+      allDays.forEach(d => {
         const th = document.createElement('th');
         th.innerHTML = formatDate(d).replace(', ', '<br>');
+        if (!availableSet.has(d)) th.classList.add('col-unavailable');
         headerRow.appendChild(th);
       });
       thead.appendChild(headerRow);
@@ -186,31 +344,54 @@
         timeCell.textContent = time.endsWith(':00') ? formatTime(time) : '';
         row.appendChild(timeCell);
 
-        dates.forEach(date => {
+        allDays.forEach(date => {
           const cell = document.createElement('td');
-          cell.className = 'slot enter-slot';
-          cell.dataset.key = slotKey(date, time);
+          const available = availableSet.has(date);
           if (time.endsWith(':00')) cell.classList.add('hour-top');
-          if (mySlots.has(cell.dataset.key)) cell.classList.add('selected');
 
-          cell.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            isDragging = true;
-            dragMode = mySlots.has(cell.dataset.key) ? 'remove' : 'add';
-            toggleSlot(cell);
-          });
-          cell.addEventListener('mouseenter', () => {
-            if (isDragging) toggleSlot(cell);
-          });
+          if (!available) {
+            cell.className = 'slot slot-unavailable';
+          } else {
+            const utcKey = localToUTCKey(date, time, tz);
+            cell.className = 'slot enter-slot';
+            cell.dataset.key = utcKey;
+            if (mySlots.has(utcKey)) cell.classList.add('selected');
+
+            cell.addEventListener('mousedown', (e) => {
+              e.preventDefault();
+              isDragging = true;
+              dragMode = mySlots.has(utcKey) ? 'remove' : 'add';
+              toggleSlot(cell);
+            });
+            cell.addEventListener('mouseenter', () => {
+              if (isDragging) toggleSlot(cell);
+            });
+            cell.addEventListener('touchstart', (e) => {
+              e.preventDefault();
+              isDragging = true;
+              dragMode = mySlots.has(utcKey) ? 'remove' : 'add';
+              toggleSlot(cell);
+            }, { passive: false });
+          }
 
           row.appendChild(cell);
         });
         tbody.appendChild(row);
       });
       table.appendChild(tbody);
+
+      table.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        if (!isDragging) return;
+        const touch = e.touches[0];
+        const el = document.elementFromPoint(touch.clientX, touch.clientY);
+        if (el && el.classList.contains('enter-slot')) toggleSlot(el);
+      }, { passive: false });
+
       grid.appendChild(table);
 
       document.addEventListener('mouseup', () => { isDragging = false; });
+      document.addEventListener('touchend', () => { isDragging = false; });
     }
 
     function toggleSlot(cell) {
@@ -251,19 +432,25 @@
       }
     }
 
+    // ── Results grid ─────────────────────────────────────────────────
     function buildResultsGrid(dates) {
       const grid = document.getElementById('resultsGrid');
       grid.innerHTML = '';
       const slots = getSlots();
+      const tz = getCurrentTZ();
       const totalRespondents = event.responses.length;
+      const allDays = getWeekAllDays(dates);
+      const availableSet = new Set(event.dates);
 
-      const overlapMap = {};
-      const nameMap = {};
+      // Build UTC overlap map — normalise all stored keys to UTC format
+      const utcOverlapMap = {};
+      const utcNameMap = {};
       event.responses.forEach(r => {
-        r.slots.forEach(key => {
-          overlapMap[key] = (overlapMap[key] || 0) + 1;
-          if (!nameMap[key]) nameMap[key] = [];
-          nameMap[key].push(r.name);
+        r.slots.forEach(slot => {
+          const key = toUTCKey(slot);
+          utcOverlapMap[key] = (utcOverlapMap[key] || 0) + 1;
+          if (!utcNameMap[key]) utcNameMap[key] = [];
+          utcNameMap[key].push(r.name);
         });
       });
 
@@ -273,9 +460,10 @@
       const thead = document.createElement('thead');
       const headerRow = document.createElement('tr');
       headerRow.appendChild(document.createElement('th'));
-      dates.forEach(d => {
+      allDays.forEach(d => {
         const th = document.createElement('th');
         th.innerHTML = formatDate(d).replace(', ', '<br>');
+        if (!availableSet.has(d)) th.classList.add('col-unavailable');
         headerRow.appendChild(th);
       });
       thead.appendChild(headerRow);
@@ -289,12 +477,19 @@
         timeCell.textContent = time.endsWith(':00') ? formatTime(time) : '';
         row.appendChild(timeCell);
 
-        dates.forEach(date => {
+        allDays.forEach(date => {
           const cell = document.createElement('td');
-          cell.className = 'slot result-slot';
           if (time.endsWith(':00')) cell.classList.add('hour-top');
-          const key = slotKey(date, time);
-          const count = overlapMap[key] || 0;
+
+          if (!availableSet.has(date)) {
+            cell.className = 'slot slot-unavailable';
+            row.appendChild(cell);
+            return;
+          }
+
+          cell.className = 'slot result-slot';
+          const utcKey = localToUTCKey(date, time, tz);
+          const count = utcOverlapMap[utcKey] || 0;
 
           if (count > 0 && totalRespondents > 0) {
             cell.style.backgroundColor = getGreen(count / totalRespondents);
@@ -302,7 +497,7 @@
 
           cell.addEventListener('mouseenter', (e) => {
             if (totalRespondents === 0) return;
-            const names = nameMap[key] || [];
+            const names = utcNameMap[utcKey] || [];
             showTooltip(e, `${count}/${totalRespondents} available${names.length ? ': ' + names.join(', ') : ''}`);
           });
           cell.addEventListener('mouseleave', hideTooltip);
@@ -323,6 +518,7 @@
       return `rgb(${r},${g},${b})`;
     }
 
+    // ── Respondent list ──────────────────────────────────────────────
     function updateRespondentList() {
       const list = document.getElementById('respondentList');
       const n = event.responses.length;
@@ -330,9 +526,37 @@
         list.innerHTML = '<p class="hint">No responses yet.</p>';
         return;
       }
-      list.innerHTML = `<p class="respondents"><strong>${n} response${n > 1 ? 's' : ''}:</strong> ${event.responses.map(r => r.name).join(', ')}</p>`;
+      const nameButtons = event.responses.map(r => {
+        const safeName = r.name.replace(/'/g, "\\'");
+        return `<span class="respondent-pill">
+          <button class="respondent-btn" onclick="loadResponse('${safeName}')">${r.name}</button>
+          <button class="respondent-delete" onclick="deleteResponse('${safeName}')" title="Delete">&times;</button>
+        </span>`;
+      }).join('');
+      list.innerHTML = `<p class="respondents"><strong>${n} response${n > 1 ? 's' : ''}:</strong> ${nameButtons}</p>`;
     }
 
+    function loadResponse(name) {
+      const response = event.responses.find(r => r.name.toLowerCase() === name.toLowerCase());
+      if (!response) return;
+      mySlots = new Set(response.slots.map(toUTCKey));
+      document.getElementById('nameInput').value = response.name;
+      switchTab('enter');
+      buildEnterGrid(weeks[currentWeekIdx]);
+    }
+
+    async function deleteResponse(name) {
+      if (!confirm(`Remove ${name}'s response?`)) return;
+      const res = await fetch(`/api/events/${eventId}/availability/${encodeURIComponent(name)}`, {
+        method: 'DELETE'
+      });
+      if (!res.ok) { alert('Failed to delete.'); return; }
+      event = await (await fetch(`/api/events/${eventId}`)).json();
+      renderWeek();
+      updateRespondentList();
+    }
+
+    // ── Tooltip ──────────────────────────────────────────────────────
     const tooltip = document.getElementById('tooltip');
     function showTooltip(e, text) {
       tooltip.textContent = text;
@@ -345,11 +569,122 @@
     }
     function hideTooltip() { tooltip.style.display = 'none'; }
 
+    // ── Tabs ─────────────────────────────────────────────────────────
     function switchTab(tab) {
       document.getElementById('tabEnter').classList.toggle('active', tab === 'enter');
       document.getElementById('tabResults').classList.toggle('active', tab === 'results');
       document.getElementById('panelEnter').style.display = tab === 'enter' ? '' : 'none';
       document.getElementById('panelResults').style.display = tab === 'results' ? '' : 'none';
+    }
+
+    // ── Add dates ────────────────────────────────────────────────────
+    const MONTHS = ['January','February','March','April','May','June',
+                    'July','August','September','October','November','December'];
+    const DAY_HEADERS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    let addDatesYear, addDatesMonth;
+    const newDates = new Set();
+
+    function toggleAddDates() {
+      const panel = document.getElementById('addDatesPanel');
+      const btn = document.getElementById('addDatesToggle');
+      const open = panel.style.display === 'none';
+      panel.style.display = open ? '' : 'none';
+      btn.textContent = open ? '− Add dates' : '+ Add dates';
+      if (open && !addDatesYear) {
+        const today = new Date();
+        addDatesYear = today.getFullYear();
+        addDatesMonth = today.getMonth();
+        renderAddDatesCalendar();
+      }
+    }
+
+    function addDatesChangeMonth(dir) {
+      addDatesMonth += dir;
+      if (addDatesMonth > 11) { addDatesMonth = 0; addDatesYear++; }
+      if (addDatesMonth < 0)  { addDatesMonth = 11; addDatesYear--; }
+      renderAddDatesCalendar();
+    }
+
+    function renderAddDatesCalendar() {
+      const cal = document.getElementById('addDatesCalendar');
+      cal.innerHTML = '';
+      document.getElementById('addDatesMonthLabel').textContent =
+        `${MONTHS[addDatesMonth]} ${addDatesYear}`;
+
+      DAY_HEADERS.forEach(d => {
+        const h = document.createElement('div');
+        h.className = 'cal-header';
+        h.textContent = d;
+        cal.appendChild(h);
+      });
+
+      const firstDay = new Date(addDatesYear, addDatesMonth, 1).getDay();
+      for (let i = 0; i < firstDay; i++) {
+        const blank = document.createElement('div');
+        blank.className = 'cal-blank';
+        cal.appendChild(blank);
+      }
+
+      const daysInMonth = new Date(addDatesYear, addDatesMonth + 1, 0).getDate();
+      const existingDates = new Set(event.dates);
+
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dateStr = `${addDatesYear}-${String(addDatesMonth + 1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        const cell = document.createElement('div');
+        cell.textContent = d;
+
+        if (existingDates.has(dateStr)) {
+          cell.className = 'cal-day cal-day-existing';
+          cell.title = 'Already in event';
+        } else {
+          cell.className = 'cal-day' + (newDates.has(dateStr) ? ' selected' : '');
+          cell.addEventListener('click', () => {
+            if (newDates.has(dateStr)) {
+              newDates.delete(dateStr);
+              cell.classList.remove('selected');
+            } else {
+              newDates.add(dateStr);
+              cell.classList.add('selected');
+            }
+            updateAddDatesCount();
+          });
+        }
+        cal.appendChild(cell);
+      }
+    }
+
+    function updateAddDatesCount() {
+      const n = newDates.size;
+      document.getElementById('addDatesCount').textContent =
+        n === 0 ? 'No dates selected' : `${n} date${n > 1 ? 's' : ''} selected`;
+    }
+
+    async function submitAddDates() {
+      if (newDates.size === 0) { alert('Please select at least one date.'); return; }
+      const btn = document.getElementById('addDatesBtn');
+      btn.disabled = true;
+      btn.textContent = 'Adding...';
+      try {
+        const res = await fetch(`/api/events/${eventId}/dates`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dates: Array.from(newDates) })
+        });
+        if (!res.ok) throw new Error();
+        event = await (await fetch(`/api/events/${eventId}`)).json();
+        newDates.clear();
+        weeks = getWeeks();
+        // Jump to the week containing the first newly added date
+        const firstNew = Array.from(newDates)[0] || event.dates[event.dates.length - 1];
+        currentWeekIdx = weeks.length - 1;
+        renderWeek();
+        toggleAddDates(); // collapse panel
+      } catch (e) {
+        alert('Failed to add dates.');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Add dates';
+      }
     }
 
     document.getElementById('copyBtn').addEventListener('click', () => {
